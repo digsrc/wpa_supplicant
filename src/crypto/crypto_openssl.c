@@ -65,30 +65,80 @@ static BIGNUM * get_group5_prime(void)
 static int openssl_digest_vector(const EVP_MD *type, size_t num_elem,
 				 const u8 *addr[], const size_t *len, u8 *mac)
 {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_MD_CTX ctx;
+#else
+	EVP_MD_CTX *ctx;
+	ctx = EVP_MD_CTX_new();
+	if (ctx == NULL)
+	{
+		wpa_printf(MSG_ERROR, "WAZAFAAK?!!!!! %s",
+                           ERR_error_string(ERR_get_error(), NULL));
+		return -1;
+	}
+#endif
+//PATCH_FIN
 	size_t i;
 	unsigned int mac_len;
 
-	EVP_MD_CTX_init(&ctx);
+	EVP_MD_CTX_init(ctx);
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	if (!EVP_DigestInit_ex(&ctx, type, NULL)) {
+#else
+	if (!EVP_DigestInit_ex(ctx, type, NULL)) {//pointer
+#endif
+//PATCH_FIN
 		wpa_printf(MSG_ERROR, "OpenSSL: EVP_DigestInit_ex failed: %s",
 			   ERR_error_string(ERR_get_error(), NULL));
+//PATCH
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_MD_CTX_free(ctx);
+#endif
+//PATCH_FIN
 		return -1;
 	}
 	for (i = 0; i < num_elem; i++) {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 		if (!EVP_DigestUpdate(&ctx, addr[i], len[i])) {
+#else
+		if (!EVP_DigestUpdate(ctx, addr[i], len[i])) {//pointer
+#endif
+//PATCH_FIN
 			wpa_printf(MSG_ERROR, "OpenSSL: EVP_DigestUpdate "
 				   "failed: %s",
 				   ERR_error_string(ERR_get_error(), NULL));
+//PATCH
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+			EVP_MD_CTX_free(ctx);
+#endif
+//PATCH_FIN
 			return -1;
 		}
 	}
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	if (!EVP_DigestFinal(&ctx, mac, &mac_len)) {
+#else
+	if (!EVP_DigestFinal(ctx, mac, &mac_len)) {
+#endif
+//PATCH_FIN
 		wpa_printf(MSG_ERROR, "OpenSSL: EVP_DigestFinal failed: %s",
 			   ERR_error_string(ERR_get_error(), NULL));
+//PATCH
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_MD_CTX_free(ctx);
+#endif
+//PATCH_FIN
 		return -1;
 	}
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	EVP_MD_CTX_free(ctx);
+#endif
+//PATCH_FIN
 	return 0;
 }
 
@@ -129,32 +179,71 @@ int rc4_skip(const u8 *key, size_t keylen, size_t skip,
 #ifdef OPENSSL_NO_RC4
 	return -1;
 #else /* OPENSSL_NO_RC4 */
+//	EVP_CIPHER_CTX ctx;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX ctx;
+#else
+	EVP_CIPHER_CTX* ctx;
+	ctx = EVP_CIPHER_CTX_new();
+	if(ctx == NULL)
+		return -1;
+#endif
+//PATCH_FIN
 	int outl;
 	int res = -1;
 	unsigned char skip_buf[16];
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX_init(&ctx);
-	if (!EVP_CIPHER_CTX_set_padding(&ctx, 0) ||
-	    !EVP_CipherInit_ex(&ctx, EVP_rc4(), NULL, NULL, NULL, 1) ||
-	    !EVP_CIPHER_CTX_set_key_length(&ctx, keylen) ||
-	    !EVP_CipherInit_ex(&ctx, NULL, NULL, key, NULL, 1))
+        if (!EVP_CIPHER_CTX_set_padding(&ctx, 0) ||
+            !EVP_CipherInit_ex(ctx, EVP_rc4(), NULL, NULL, NULL, 1) ||
+            !EVP_CIPHER_CTX_set_key_length(&ctx, keylen) ||
+            !EVP_CipherInit_ex(&ctx, NULL, NULL, key, NULL, 1))
+                goto out;
+
+        while (skip >= sizeof(skip_buf)) {
+                size_t len = skip;
+                if (len > sizeof(skip_buf))
+                        len = sizeof(skip_buf);
+                if (!EVP_CipherUpdate(&ctx, skip_buf, &outl, skip_buf, len))
+                        goto out;
+                skip -= len;
+        }
+
+        if (EVP_CipherUpdate(&ctx, data, &outl, data, data_len))
+                res = 0;
+
+out:
+        EVP_CIPHER_CTX_cleanup(&ctx);
+#else
+	EVP_CIPHER_CTX_init(ctx);//pointer
+	if (!EVP_CIPHER_CTX_set_padding(ctx, 0) ||//pointer
+	    !EVP_CipherInit_ex(ctx, EVP_rc4(), NULL, NULL, NULL, 1) ||//pointer
+	    !EVP_CIPHER_CTX_set_key_length(ctx, keylen) ||//pointer
+	    !EVP_CipherInit_ex(ctx, NULL, NULL, key, NULL, 1))//pointer
 		goto out;
 
 	while (skip >= sizeof(skip_buf)) {
 		size_t len = skip;
 		if (len > sizeof(skip_buf))
 			len = sizeof(skip_buf);
-		if (!EVP_CipherUpdate(&ctx, skip_buf, &outl, skip_buf, len))
+		if (!EVP_CipherUpdate(ctx, skip_buf, &outl, skip_buf, len))//pointer
 			goto out;
 		skip -= len;
 	}
 
-	if (EVP_CipherUpdate(&ctx, data, &outl, data, data_len))
+	if (EVP_CipherUpdate(ctx, data, &outl, data, data_len))//pointer
 		res = 0;
 
 out:
-	EVP_CIPHER_CTX_cleanup(&ctx);
+	EVP_CIPHER_CTX_reset(ctx);//pointer
+#endif
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+	EVP_CIPHER_CTX_free(ctx);
+#endif
+//PATH_FIN
 	return res;
 #endif /* OPENSSL_NO_RC4 */
 }
@@ -209,18 +298,32 @@ void * aes_encrypt_init(const u8 *key, size_t len)
 	type = aes_get_evp_cipher(len);
 	if (type == NULL)
 		return NULL;
-
+//PATCH
+	//ctx = os_malloc(sizeof(*ctx));
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	ctx = os_malloc(sizeof(*ctx));
+#else
+	ctx = EVP_CIPHER_CTX_new();
+#endif
+//PATCH_FIN
 	if (ctx == NULL)
 		return NULL;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX_init(ctx);
+#else
+	EVP_CIPHER_CTX_reset(ctx);
+#endif
 	if (EVP_EncryptInit_ex(ctx, type, NULL, key, NULL) != 1) {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 		os_free(ctx);
+#else
+		EVP_CIPHER_CTX_free(ctx);
+#endif
 		return NULL;
 	}
 	EVP_CIPHER_CTX_set_padding(ctx, 0);
 	return ctx;
-}
+}//returns_allocated
 
 
 void aes_encrypt(void *ctx, const u8 *plain, u8 *crypt)
@@ -248,7 +351,14 @@ void aes_encrypt_deinit(void *ctx)
 			   "in AES encrypt", len);
 	}
 	EVP_CIPHER_CTX_cleanup(c);
+//PATCH
+//	bin_clear_free(c, sizeof(*c));
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	bin_clear_free(c, sizeof(*c));
+#else
+	EVP_CIPHER_CTX_free(c);
+#endif
+//PATCH_FIN
 }
 
 
@@ -260,13 +370,24 @@ void * aes_decrypt_init(const u8 *key, size_t len)
 	type = aes_get_evp_cipher(len);
 	if (type == NULL)
 		return NULL;
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	ctx = os_malloc(sizeof(*ctx));
+#else
+	ctx = EVP_CIPHER_CTX_new();
+#endif
+//PATCH_FIN
 	if (ctx == NULL)
 		return NULL;
 	EVP_CIPHER_CTX_init(ctx);
 	if (EVP_DecryptInit_ex(ctx, type, NULL, key, NULL) != 1) {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 		os_free(ctx);
+#else
+		EVP_CIPHER_CTX_free(ctx);
+#endif
+//PATCH_FIN
 		return NULL;
 	}
 	EVP_CIPHER_CTX_set_padding(ctx, 0);
@@ -299,7 +420,13 @@ void aes_decrypt_deinit(void *ctx)
 			   "in AES decrypt", len);
 	}
 	EVP_CIPHER_CTX_cleanup(c);
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	bin_clear_free(c, sizeof(*c));
+#else
+	EVP_CIPHER_CTX_free(ctx);
+#endif
+//PATCH_FIN
 }
 
 
@@ -338,10 +465,18 @@ int aes_unwrap(const u8 *kek, size_t kek_len, int n, const u8 *cipher,
 
 int aes_128_cbc_encrypt(const u8 *key, const u8 *iv, u8 *data, size_t data_len)
 {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX ctx;
+#else
+	EVP_CIPHER_CTX *ctx;
+	ctx = EVP_CIPHER_CTX_new();
+#endif
+//PATCH_FIN
 	int clen, len;
 	u8 buf[16];
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX_init(&ctx);
 	if (EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1)
 		return -1;
@@ -356,13 +491,32 @@ int aes_128_cbc_encrypt(const u8 *key, const u8 *iv, u8 *data, size_t data_len)
 	if (EVP_EncryptFinal_ex(&ctx, buf, &len) != 1 || len != 0)
 		return -1;
 	EVP_CIPHER_CTX_cleanup(&ctx);
+#else
+	EVP_CIPHER_CTX_init(ctx);//pointer
+        if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1)//pointer
+                return -1;
+        EVP_CIPHER_CTX_set_padding(ctx, 0);//pointer
 
+        clen = data_len;
+        if (EVP_EncryptUpdate(ctx, data, &clen, data, data_len) != 1 ||//pointer
+            clen != (int) data_len)
+                return -1;
+
+        len = sizeof(buf);
+        if (EVP_EncryptFinal_ex(ctx, buf, &len) != 1 || len != 0)//pointer
+                return -1;
+        EVP_CIPHER_CTX_cleanup(ctx);//pointer
+	EVP_CIPHER_CTX_free(ctx);
+#endif
+//PATCH_FIN
 	return 0;
 }
 
 
 int aes_128_cbc_decrypt(const u8 *key, const u8 *iv, u8 *data, size_t data_len)
 {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX ctx;
 	int plen, len;
 	u8 buf[16];
@@ -381,7 +535,28 @@ int aes_128_cbc_decrypt(const u8 *key, const u8 *iv, u8 *data, size_t data_len)
 	if (EVP_DecryptFinal_ex(&ctx, buf, &len) != 1 || len != 0)
 		return -1;
 	EVP_CIPHER_CTX_cleanup(&ctx);
+#else
+	EVP_CIPHER_CTX *ctx;
+	ctx = EVP_CIPHER_CTX_new();
+        int plen, len;
+        u8 buf[16];
 
+        EVP_CIPHER_CTX_init(ctx);//pointer
+        if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1)//pointer
+                return -1;
+        EVP_CIPHER_CTX_set_padding(ctx, 0);//pointer
+
+        plen = data_len;
+        if (EVP_DecryptUpdate(ctx, data, &plen, data, data_len) != 1 ||//pointer
+            plen != (int) data_len)
+                return -1;
+
+        len = sizeof(buf);
+        if (EVP_DecryptFinal_ex(ctx, buf, &len) != 1 || len != 0)//pointer
+                return -1;
+        EVP_CIPHER_CTX_cleanup(ctx);//pointer
+	EVP_CIPHER_CTX_free(ctx);
+#endif
 	return 0;
 }
 
@@ -425,8 +600,15 @@ error:
 
 
 struct crypto_cipher {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX enc;
 	EVP_CIPHER_CTX dec;
+#else
+	EVP_CIPHER_CTX *enc;
+        EVP_CIPHER_CTX *dec;
+#endif
+//PATCH_FIN
 };
 
 
@@ -486,7 +668,8 @@ struct crypto_cipher * crypto_cipher_init(enum crypto_cipher_alg alg,
 		os_free(ctx);
 		return NULL;
 	}
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX_init(&ctx->enc);
 	EVP_CIPHER_CTX_set_padding(&ctx->enc, 0);
 	if (!EVP_EncryptInit_ex(&ctx->enc, cipher, NULL, NULL, NULL) ||
@@ -507,7 +690,34 @@ struct crypto_cipher * crypto_cipher_init(enum crypto_cipher_alg alg,
 		os_free(ctx);
 		return NULL;
 	}
+#else
+	ctx->enc = EVP_CIPHER_CTX_new();
+	EVP_CIPHER_CTX_init(ctx->enc);//pointer
+        EVP_CIPHER_CTX_set_padding(ctx->enc, 0);//pointer
+        if (!EVP_EncryptInit_ex(ctx->enc, cipher, NULL, NULL, NULL) ||//pointer
+            !EVP_CIPHER_CTX_set_key_length(ctx->enc, key_len) ||//pointer
+            !EVP_EncryptInit_ex(ctx->enc, NULL, NULL, key, iv)) {//pointer
+                EVP_CIPHER_CTX_cleanup(ctx->enc);//pointer
+		EVP_CIPHER_CTX_free(ctx->enc);
+		os_free(ctx);
+                return NULL;
+        }
+	ctx->dec = EVP_CIPHER_CTX_new();
+        EVP_CIPHER_CTX_init(ctx->dec);//pointer
+        EVP_CIPHER_CTX_set_padding(ctx->dec, 0);//pointer
+        if (!EVP_DecryptInit_ex(ctx->dec, cipher, NULL, NULL, NULL) ||//pointer
+            !EVP_CIPHER_CTX_set_key_length(ctx->dec, key_len) ||//pointer
+            !EVP_DecryptInit_ex(ctx->dec, NULL, NULL, key, iv)) {//pointer
+                EVP_CIPHER_CTX_cleanup(ctx->enc);//pointer
+                EVP_CIPHER_CTX_cleanup(ctx->dec);//pointer
+		EVP_CIPHER_CTX_free(ctx->enc);
+		EVP_CIPHER_CTX_free(ctx->dec);
+		os_free(ctx);
+                return NULL;
+        }
 
+#endif
+//PATCH_FIN
 	return ctx;
 }
 
@@ -516,8 +726,19 @@ int crypto_cipher_encrypt(struct crypto_cipher *ctx, const u8 *plain,
 			  u8 *crypt, size_t len)
 {
 	int outl;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	if (!EVP_EncryptUpdate(&ctx->enc, crypt, &outl, plain, len))
 		return -1;
+#else
+	if(ctx == NULL)
+		return -1;
+	if(ctx->enc == NULL)
+		return -1;
+	if (!EVP_EncryptUpdate(ctx->enc, crypt, &outl, plain, len))//pointer
+                return -1;
+#endif
+//PTCH_FIN
 	return 0;
 }
 
@@ -527,17 +748,38 @@ int crypto_cipher_decrypt(struct crypto_cipher *ctx, const u8 *crypt,
 {
 	int outl;
 	outl = len;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	if (!EVP_DecryptUpdate(&ctx->dec, plain, &outl, crypt, len))
 		return -1;
+#else
+	if(ctx == NULL)
+		return -1;
+	if(ctx->dec == NULL)
+		return -1;
+	if (!EVP_DecryptUpdate(ctx->dec, plain, &outl, crypt, len))//pointer
+                return -1;
+#endif
+//PTCH_FIN
 	return 0;
 }
 
 
 void crypto_cipher_deinit(struct crypto_cipher *ctx)
 {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_CIPHER_CTX_cleanup(&ctx->enc);
 	EVP_CIPHER_CTX_cleanup(&ctx->dec);
 	os_free(ctx);
+#else
+	EVP_CIPHER_CTX_cleanup(ctx->enc);//pointer
+        EVP_CIPHER_CTX_cleanup(ctx->dec);//pointer
+	EVP_CIPHER_CTX_free(ctx->enc);
+        EVP_CIPHER_CTX_free(ctx->dec);
+	os_free(ctx);
+#endif
+//PTCH_FIN
 }
 
 
@@ -553,7 +795,8 @@ void * dh5_init(struct wpabuf **priv, struct wpabuf **publ)
 	dh = DH_new();
 	if (dh == NULL)
 		return NULL;
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	dh->g = BN_new();
 	if (dh->g == NULL || BN_set_word(dh->g, 2) != 1)
 		goto err;
@@ -562,9 +805,23 @@ void * dh5_init(struct wpabuf **priv, struct wpabuf **publ)
 	if (dh->p == NULL)
 		goto err;
 
+#else
+	BIGNUM *g = BN_new();
+	BIGNUM *p = BN_new();
+	if (g == NULL || BN_set_word(g, 2) != 1)
+                goto err;
+
+        p = get_group5_prime();
+        if (p == NULL)
+		goto err;
+	DH_set0_pqg(dh, p, NULL, g);
+#endif
+//PATCH_FIN
 	if (DH_generate_key(dh) != 1)
 		goto err;
 
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	publen = BN_num_bytes(dh->pub_key);
 	pubkey = wpabuf_alloc(publen);
 	if (pubkey == NULL)
@@ -576,7 +833,23 @@ void * dh5_init(struct wpabuf **priv, struct wpabuf **publ)
 
 	BN_bn2bin(dh->pub_key, wpabuf_put(pubkey, publen));
 	BN_bn2bin(dh->priv_key, wpabuf_put(privkey, privlen));
+#else
+	BIGNUM* key1;
+	BIGNUM* key2;
+	DH_get0_key(dh, (const BIGNUM**)&key1, (const BIGNUM**)&key2);
+	publen = BN_num_bytes(key1);
+        pubkey = wpabuf_alloc(publen);
+        if (pubkey == NULL)
+                goto err;
+        privlen = BN_num_bytes(key2);
+        privkey = wpabuf_alloc(privlen);
+        if (privkey == NULL)
+                goto err;
 
+        BN_bn2bin(key1, wpabuf_put(pubkey, publen));
+        BN_bn2bin(key2, wpabuf_put(privkey, privlen));
+#endif
+//PATCH_FIN
 	*priv = privkey;
 	*publ = pubkey;
 	return dh;
@@ -596,7 +869,8 @@ void * dh5_init_fixed(const struct wpabuf *priv, const struct wpabuf *publ)
 	dh = DH_new();
 	if (dh == NULL)
 		return NULL;
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	dh->g = BN_new();
 	if (dh->g == NULL || BN_set_word(dh->g, 2) != 1)
 		goto err;
@@ -604,7 +878,21 @@ void * dh5_init_fixed(const struct wpabuf *priv, const struct wpabuf *publ)
 	dh->p = get_group5_prime();
 	if (dh->p == NULL)
 		goto err;
+#else
+	BIGNUM *g = BN_new();
+	BIGNUM *p = BN_new();
+        if (g == NULL || BN_set_word(g, 2) != 1)
+                goto err;
 
+        p = get_group5_prime();
+        if (p == NULL)
+                goto err;
+	DH_set0_pqg(dh, p, NULL, g);
+#endif
+//PATCH_FIN
+
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	dh->priv_key = BN_bin2bn(wpabuf_head(priv), wpabuf_len(priv), NULL);
 	if (dh->priv_key == NULL)
 		goto err;
@@ -612,7 +900,20 @@ void * dh5_init_fixed(const struct wpabuf *priv, const struct wpabuf *publ)
 	dh->pub_key = BN_bin2bn(wpabuf_head(publ), wpabuf_len(publ), NULL);
 	if (dh->pub_key == NULL)
 		goto err;
+#else
+	BIGNUM* priv_key;
+	BIGNUM* pub_key;
+	
+	priv_key = BN_bin2bn(wpabuf_head(priv), wpabuf_len(priv), NULL);
+        if (priv_key == NULL)
+                goto err;
 
+        pub_key = BN_bin2bn(wpabuf_head(publ), wpabuf_len(publ), NULL);
+        if (pub_key == NULL)
+                goto err;
+	DH_set0_key(dh, pub_key, priv_key);
+#endif
+//PATCH_FIN
 	if (DH_generate_key(dh) != 1)
 		goto err;
 
@@ -672,7 +973,13 @@ void dh5_free(void *ctx)
 
 
 struct crypto_hash {
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	HMAC_CTX ctx;
+#else
+	HMAC_CTX *ctx;
+#endif
+//PATCH_FIN
 };
 
 
@@ -707,9 +1014,22 @@ struct crypto_hash * crypto_hash_init(enum crypto_hash_alg alg, const u8 *key,
 	ctx = os_zalloc(sizeof(*ctx));
 	if (ctx == NULL)
 		return NULL;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	HMAC_CTX_init(&ctx->ctx);
+#else
+	ctx->ctx = HMAC_CTX_new();
+#endif
 
-#if OPENSSL_VERSION_NUMBER < 0x00909000
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	if (HMAC_Init_ex(ctx->ctx, key, key_len, md, NULL) != 1) {
+                //bin_clear_free(ctx, sizeof(*ctx));
+		HMAC_CTX_free(ctx->ctx);
+                return NULL;
+        }
+
+#elif OPENSSL_VERSION_NUMBER < 0x00909000
+//PATCH_FIN
 	HMAC_Init_ex(&ctx->ctx, key, key_len, md, NULL);
 #else /* openssl < 0.9.9 */
 	if (HMAC_Init_ex(&ctx->ctx, key, key_len, md, NULL) != 1) {
@@ -726,7 +1046,12 @@ void crypto_hash_update(struct crypto_hash *ctx, const u8 *data, size_t len)
 {
 	if (ctx == NULL)
 		return;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	HMAC_Update(&ctx->ctx, data, len);
+#else
+	HMAC_Update(ctx->ctx, data, len);//pointer
+#endif
 }
 
 
@@ -744,13 +1069,21 @@ int crypto_hash_finish(struct crypto_hash *ctx, u8 *mac, size_t *len)
 	}
 
 	mdlen = *len;
-#if OPENSSL_VERSION_NUMBER < 0x00909000
+//PATCH
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	res = HMAC_Final(ctx->ctx, mac, &mdlen);
+#elif OPENSSL_VERSION_NUMBER < 0x00909000
+//PATCH_FIN
 	HMAC_Final(&ctx->ctx, mac, &mdlen);
 	res = 1;
 #else /* openssl < 0.9.9 */
 	res = HMAC_Final(&ctx->ctx, mac, &mdlen);
 #endif /* openssl < 0.9.9 */
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	HMAC_CTX_free(ctx->ctx);
+#else
 	HMAC_CTX_cleanup(&ctx->ctx);
+#endif
 	bin_clear_free(ctx, sizeof(*ctx));
 
 	if (res == 1) {
@@ -767,12 +1100,27 @@ static int openssl_hmac_vector(const EVP_MD *type, const u8 *key,
 			       const u8 *addr[], const size_t *len, u8 *mac,
 			       unsigned int mdlen)
 {
-	HMAC_CTX ctx;
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+        HMAC_CTX ctx;
+#else
+        HMAC_CTX *ctx;
+#endif
+//PATCH_FIN
 	size_t i;
 	int res;
-
+//PATCH
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	HMAC_CTX_init(&ctx);
-#if OPENSSL_VERSION_NUMBER < 0x00909000
+#else
+	ctx = HMAC_CTX_new();
+#endif
+//PATCH_FIN
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	if (HMAC_Init_ex(ctx, key, key_len, type, NULL) != 1)
+                return -1;
+#elif OPENSSL_VERSION_NUMBER < 0x00909000
 	HMAC_Init_ex(&ctx, key, key_len, type, NULL);
 #else /* openssl < 0.9.9 */
 	if (HMAC_Init_ex(&ctx, key, key_len, type, NULL) != 1)
@@ -780,16 +1128,24 @@ static int openssl_hmac_vector(const EVP_MD *type, const u8 *key,
 #endif /* openssl < 0.9.9 */
 
 	for (i = 0; i < num_elem; i++)
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		HMAC_Update(ctx, addr[i], len[i]);//pointer
+#else
 		HMAC_Update(&ctx, addr[i], len[i]);
-
-#if OPENSSL_VERSION_NUMBER < 0x00909000
+#endif
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	res = HMAC_Final(ctx, mac, &mdlen);
+#elif OPENSSL_VERSION_NUMBER < 0x00909000
 	HMAC_Final(&ctx, mac, &mdlen);
 	res = 1;
 #else /* openssl < 0.9.9 */
 	res = HMAC_Final(&ctx, mac, &mdlen);
 #endif /* openssl < 0.9.9 */
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	HMAC_CTX_free(ctx);
+#else
 	HMAC_CTX_cleanup(&ctx);
-
+#endif
 	return res == 1 ? 0 : -1;
 }
 
