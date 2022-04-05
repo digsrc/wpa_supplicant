@@ -6,17 +6,20 @@
  * See README for more details.
  */
 
+#include <stdio.h>
 #include "includes.h"
 
 #include "common.h"
 #include "crypto/sha1.h"
-
+extern int my_getpass(char **lineptr, size_t *n, FILE *stream);
 
 int main(int argc, char *argv[])
 {
 	unsigned char psk[32];
 	int i;
-	char *ssid, *passphrase, buf[64], *pos;
+	char *ssid, *passphrase, **buf = NULL;
+	int n = 64;
+	FILE *stream = NULL;
 
 	if (argc < 2) {
 		printf("usage: wpa_passphrase <ssid> [passphrase]\n"
@@ -31,20 +34,16 @@ int main(int argc, char *argv[])
 		passphrase = argv[2];
 	} else {
 		printf("# reading passphrase from stdin\n");
-		if (fgets(buf, sizeof(buf), stdin) == NULL) {
-			printf("Failed to read passphrase\n");
-			return 1;
+		buf = (char **)calloc(1, sizeof(char *));
+		if (buf)
+			buf[0] = (char *)calloc(1, 64);
+
+		if (buf[0]) {
+			stream = fdopen(0, "r");
+			my_getpass(buf, (size_t *)&n, stream);
 		}
-		buf[sizeof(buf) - 1] = '\0';
-		pos = buf;
-		while (*pos != '\0') {
-			if (*pos == '\r' || *pos == '\n') {
-				*pos = '\0';
-				break;
-			}
-			pos++;
-		}
-		passphrase = buf;
+		
+		passphrase = buf[0];
 	}
 
 	if (os_strlen(passphrase) < 8 || os_strlen(passphrase) > 63) {
@@ -56,7 +55,11 @@ int main(int argc, char *argv[])
 
 	printf("network={\n");
 	printf("\tssid=\"%s\"\n", ssid);
+
+	// This should be not displayed if standard output is set to stdout, but
+	// we do that for backward compatibility
 	printf("\t#psk=\"%s\"\n", passphrase);
+
 	printf("\tpsk=");
 	for (i = 0; i < 32; i++)
 		printf("%02x", psk[i]);
